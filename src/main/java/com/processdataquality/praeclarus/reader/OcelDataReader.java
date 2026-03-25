@@ -78,6 +78,10 @@ public class OcelDataReader extends AbstractDataReader {
 
     // ---- XML parsing ----
 
+    /**
+     * Reads event-type definitions to build an attribute name -> type map.
+     * This allows creating properly typed columns for event attributes.
+     */
     private void readEventTypes(Document doc) {
         NodeList eventTypes = doc.getElementsByTagName("event-type");
         for (int i = 0; i < eventTypes.getLength(); i++) {
@@ -94,6 +98,9 @@ public class OcelDataReader extends AbstractDataReader {
         }
     }
 
+    /**
+     * Iterates through all event elements and adds each as a row.
+     */
     private void parseEvents(Document doc) {
         NodeList events = doc.getElementsByTagName("event");
         for (int i = 0; i < events.getLength(); i++) {
@@ -104,6 +111,9 @@ public class OcelDataReader extends AbstractDataReader {
         }
     }
 
+    /**
+     * Parses a single event element into one table row.
+     */
     private void parseEvent(Element event) {
         // Core OCEL fields
         getStringColumn("ocel:eid").append(event.getAttribute("id"));
@@ -124,6 +134,9 @@ public class OcelDataReader extends AbstractDataReader {
         padColumns(getRowCount());
     }
 
+    /**
+     * Appends typed values for each attribute in the attributes element.
+     */
     private void parseEventAttributes(Element attributesEl) {
         NodeList attrs = attributesEl.getElementsByTagName("attribute");
         for (int i = 0; i < attrs.getLength(); i++) {
@@ -134,6 +147,12 @@ public class OcelDataReader extends AbstractDataReader {
         }
     }
 
+    /**
+     * (For now), builds a comma-separated string of objectId:qualifier pairs from
+     * the objects element. Handles both relationship and object child
+     * elements (the OCEL XML format uses both conventions). The choice for
+     * objectId:qualifier is a potential bug since colons can be used for object ids.
+     */
     private String buildRelationshipsString(Element objectsEl) {
         StringBuilder rels = new StringBuilder();
         NodeList children = objectsEl.getChildNodes();
@@ -143,11 +162,6 @@ public class OcelDataReader extends AbstractDataReader {
             Element el = (Element) children.item(i);
             String tag = el.getTagName();
             if (tag.equals("relationship") || tag.equals("object")) {
-                // Currently building objectId:qualifier with comma (,)
-                // as separator. There are times where colons (:) can be used
-                // as part of the objectId. This is left intentional for the
-                // time being.
-
                 String objectId = el.getAttribute("object-id");
                 String qualifier = el.getAttribute("qualifier");
                 if (rels.length() > 0)
@@ -160,6 +174,10 @@ public class OcelDataReader extends AbstractDataReader {
 
     // ---- Typed value handling ----
 
+    /**
+     * Appends a value to the appropriately typed column based on the
+     * attribute type from the event-type definitions.
+     */
     private void appendTypedValue(String name, String value) {
         String type = _attributeTypes.getOrDefault(name, "string");
 
