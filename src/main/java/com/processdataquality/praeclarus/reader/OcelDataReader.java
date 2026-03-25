@@ -2,22 +2,25 @@ package com.processdataquality.praeclarus.reader;
 
 import com.processdataquality.praeclarus.annotation.Plugin;
 import com.processdataquality.praeclarus.option.FileOption;
+
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+
 import tech.tablesaw.api.*;
 import tech.tablesaw.columns.Column;
 import tech.tablesaw.io.ReadOptions;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 /**
  * @author Sean Dewantoro
@@ -34,12 +37,10 @@ public class OcelDataReader extends AbstractDataReader {
     private final Map<String, Column<?>> _columns = new LinkedHashMap<>();
     private final Map<String, String> _attributeTypes = new HashMap<>();
 
-
     public OcelDataReader() {
         super();
         addDefaultOptions();
     }
-
 
     @Override
     public Table read() throws IOException {
@@ -58,11 +59,9 @@ public class OcelDataReader extends AbstractDataReader {
             parseEvents(doc);
 
             return Table.create(new ArrayList<>(_columns.values()));
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             throw e;
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             throw new IOException("Failed to load OCEL XML file", e);
         }
     }
@@ -76,7 +75,6 @@ public class OcelDataReader extends AbstractDataReader {
     protected ReadOptions getReadOptions() {
         return null;
     }
-
 
     // ---- XML parsing ----
 
@@ -110,8 +108,7 @@ public class OcelDataReader extends AbstractDataReader {
         // Core OCEL fields
         getStringColumn("ocel:eid").append(event.getAttribute("id"));
         getStringColumn("ocel:activity").append(event.getAttribute("type"));
-        getDateTimeColumn("ocel:timestamp").append(
-                parseTimestamp(event.getAttribute("time")));
+        getDateTimeColumn("ocel:timestamp").append(parseTimestamp(event.getAttribute("time")));
 
         // Event attributes
         Element attributesEl = getChildElement(event, "attributes");
@@ -121,8 +118,8 @@ public class OcelDataReader extends AbstractDataReader {
 
         // Event-to-object relationships
         Element objectsEl = getChildElement(event, "objects");
-        getStringColumn("ocel:relationships").append(
-                objectsEl != null ? buildRelationshipsString(objectsEl) : "");
+        getStringColumn("ocel:relationships")
+                .append(objectsEl != null ? buildRelationshipsString(objectsEl) : "");
 
         padColumns(getRowCount());
     }
@@ -141,7 +138,8 @@ public class OcelDataReader extends AbstractDataReader {
         StringBuilder rels = new StringBuilder();
         NodeList children = objectsEl.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
-            if (!(children.item(i) instanceof Element)) continue;
+            if (!(children.item(i) instanceof Element))
+                continue;
             Element el = (Element) children.item(i);
             String tag = el.getTagName();
             if (tag.equals("relationship") || tag.equals("object")) {
@@ -152,13 +150,13 @@ public class OcelDataReader extends AbstractDataReader {
 
                 String objectId = el.getAttribute("object-id");
                 String qualifier = el.getAttribute("qualifier");
-                if (rels.length() > 0) rels.append(",");
+                if (rels.length() > 0)
+                    rels.append(",");
                 rels.append(objectId).append(":").append(qualifier);
             }
         }
         return rels.toString();
     }
-
 
     // ---- Typed value handling ----
 
@@ -188,22 +186,25 @@ public class OcelDataReader extends AbstractDataReader {
                     getStringColumn(name).append(value);
                     break;
             }
-        }
-        catch (NumberFormatException | DateTimeParseException e) {
+        } catch (NumberFormatException | DateTimeParseException e) {
             getColumnForType(name, type).appendMissing();
         }
     }
 
     private Column<?> getColumnForType(String name, String type) {
         switch (type) {
-            case "integer": return getLongColumn(name);
-            case "float":   return getDoubleColumn(name);
-            case "boolean": return getBooleanColumn(name);
-            case "time":    return getDateTimeColumn(name);
-            default:        return getStringColumn(name);
+            case "integer":
+                return getLongColumn(name);
+            case "float":
+                return getDoubleColumn(name);
+            case "boolean":
+                return getBooleanColumn(name);
+            case "time":
+                return getDateTimeColumn(name);
+            default:
+                return getStringColumn(name);
         }
     }
-
 
     // ---- Timestamp parsing ----
 
@@ -213,7 +214,6 @@ public class OcelDataReader extends AbstractDataReader {
         normalized = normalized.replaceAll("(Z|[+-]\\d{2}(:\\d{2})?)$", "");
         return LocalDateTime.parse(normalized, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
     }
-
 
     // ---- XML helpers ----
 
@@ -300,5 +300,4 @@ public class OcelDataReader extends AbstractDataReader {
             column.appendMissing();
         }
     }
-
 }
