@@ -31,13 +31,13 @@ import javax.xml.parsers.DocumentBuilderFactory;
  * @date 25/3/26
  */
 @Plugin(
-        name = "OCEL Reader",
+        name = "OCEL Events Reader",
         author = "Sean Dewantoro",
         version = "1.0",
         synopsis = "Loads an event log stored in OCEL 2.0 format (XML or JSON).",
         fileDescriptors = "OCEL Files;application/xml;.xml;OCEL Files;application/xml;.xmlocel;OCEL Files;application/json;.jsonocel"
 )
-public class OcelDataReader extends AbstractDataReader {
+public class OcelEventsReader extends AbstractDataReader {
 
     private final Map<String, Column<?>> _columns = new LinkedHashMap<>();
     private final Map<String, String> _attributeTypes = new HashMap<>();
@@ -58,7 +58,7 @@ public class OcelDataReader extends AbstractDataReader {
         }
     }
 
-    public OcelDataReader() {
+    public OcelEventsReader() {
         super();
         addDefaultOptions();
     }
