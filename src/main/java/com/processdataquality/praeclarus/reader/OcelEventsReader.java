@@ -41,22 +41,7 @@ public class OcelEventsReader extends AbstractDataReader {
 
     private final Map<String, Column<?>> _columns = new LinkedHashMap<>();
     private final Map<String, String> _attributeTypes = new HashMap<>();
-    private final List<String> _objectTypeNames = new ArrayList<>();
-    private final Map<String, Map<String, String>> _objectTypeAttributes = new LinkedHashMap<>();
-    private final Map<String, OcelObject> _objectsMap = new LinkedHashMap<>();
     private final ObjectMapper _mapper = new ObjectMapper();
-
-    private static class OcelObject {
-        final String id;
-        final String type;
-        final Map<String, String> attributes;
-
-        OcelObject(String id, String type, Map<String, String> attributes) {
-            this.id = id;
-            this.type = type;
-            this.attributes = attributes;
-        }
-    }
 
     public OcelEventsReader() {
         super();
@@ -77,8 +62,6 @@ public class OcelEventsReader extends AbstractDataReader {
             doc.getDocumentElement().normalize();
 
             readEventTypes(doc);
-            readObjectTypes(doc);
-            parseObjects(doc);
             parseEvents(doc);
 
             return Table.create(new ArrayList<>(_columns.values()));
@@ -122,64 +105,6 @@ public class OcelEventsReader extends AbstractDataReader {
     }
 
     /**
-     * Reads object-type definitions to build attribute name -> type maps per object type.
-     */
-    private void readObjectTypes(Document doc) {
-        NodeList objectTypes = doc.getElementsByTagName("object-type");
-        for (int i = 0; i < objectTypes.getLength(); i++) {
-            Element objectType = (Element) objectTypes.item(i);
-            String typeName = objectType.getAttribute("name");
-            _objectTypeNames.add(typeName);
-
-            Map<String, String> attrDefs = new LinkedHashMap<>();
-            NodeList attrs = objectType.getElementsByTagName("attribute");
-            for (int j = 0; j < attrs.getLength(); j++) {
-                Element attr = (Element) attrs.item(j);
-                String name = attr.getAttribute("name");
-                String type = attr.getAttribute("type");
-                if (!type.isEmpty()) {
-                    attrDefs.put(name, type);
-                }
-            }
-            _objectTypeAttributes.put(typeName, attrDefs);
-        }
-    }
-
-    /**
-     * Parses all top-level object elements into a lookup map keyed by object ID.
-     * For temporal attributes (multiple values at different times), the last value wins.
-     */
-    private void parseObjects(Document doc) {
-        Element root = doc.getDocumentElement();
-        Element objectsSection = getChildElement(root, "objects");
-        if (objectsSection == null) return;
-
-        NodeList children = objectsSection.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            if (!(children.item(i) instanceof Element)) continue;
-            Element objectEl = (Element) children.item(i);
-            if (!objectEl.getTagName().equals("object")) continue;
-
-            String id = objectEl.getAttribute("id");
-            String type = objectEl.getAttribute("type");
-
-            Map<String, String> attributes = new LinkedHashMap<>();
-            Element attributesEl = getChildElement(objectEl, "attributes");
-            if (attributesEl != null) {
-                NodeList attrs = attributesEl.getChildNodes();
-                for (int j = 0; j < attrs.getLength(); j++) {
-                    if (!(attrs.item(j) instanceof Element)) continue;
-                    Element attr = (Element) attrs.item(j);
-                    if (!attr.getTagName().equals("attribute")) continue;
-                    attributes.put(attr.getAttribute("name"), attr.getTextContent().trim());
-                }
-            }
-
-            _objectsMap.put(id, new OcelObject(id, type, attributes));
-        }
-    }
-
-    /**
      * Iterates through all event elements and adds each as a row.
      */
     private void parseEvents(Document doc) {
@@ -213,7 +138,6 @@ public class OcelEventsReader extends AbstractDataReader {
                 ? extractRelationships(objectsEl) : Collections.emptyList();
 
         getStringColumn("ocel:relationships").append(buildRelationshipsJson(relationships));
-        populateObjectTypeColumns(relationships);
 
         padColumns(getRowCount());
     }
@@ -266,37 +190,6 @@ public class OcelEventsReader extends AbstractDataReader {
             array.add(obj);
         }
         return array.toString();
-    }
-
-    /**
-     * For each known object type, builds a JSON array of related objects
-     * and appends it to the corresponding ocel:objects:<type> column.
-     */
-    private void populateObjectTypeColumns(List<String[]> relationships) {
-        // Group referenced objects by their type
-        Map<String, List<OcelObject>> objectsByType = new LinkedHashMap<>();
-        for (String[] rel : relationships) {
-            OcelObject obj = _objectsMap.get(rel[0]);
-            if (obj != null) {
-                objectsByType.computeIfAbsent(obj.type, k -> new ArrayList<>()).add(obj);
-            }
-        }
-
-        for (String typeName : _objectTypeNames) {
-            StringColumn col = getStringColumn("ocel:objects:" + typeName);
-            List<OcelObject> objects = objectsByType.getOrDefault(typeName, Collections.emptyList());
-
-            ArrayNode array = _mapper.createArrayNode();
-            for (OcelObject obj : objects) {
-                ObjectNode node = _mapper.createObjectNode();
-                node.put("id", obj.id);
-                for (Map.Entry<String, String> attr : obj.attributes.entrySet()) {
-                    node.put(attr.getKey(), attr.getValue());
-                }
-                array.add(node);
-            }
-            col.append(array.toString());
-        }
     }
 
     // ---- Typed value handling ----
