@@ -76,8 +76,8 @@ public class OcelObjectsReader extends AbstractDataReader {
                 Document doc = builder.parse(is);
                 doc.getDocumentElement().normalize();
 
-                readObjectTypes(doc);
-                parseObjects(doc);
+                readObjectTypesXml(doc);
+                parseObjectsXml(doc);
             }
 
             return Table.create(new ArrayList<>(_columns.values()));
@@ -105,7 +105,7 @@ public class OcelObjectsReader extends AbstractDataReader {
      * under the prefixed key "<objectType>:<attrName>" so that typed columns
      * can be created during object parsing without cross-type collisions.
      */
-    private void readObjectTypes(Document doc) {
+    private void readObjectTypesXml(Document doc) {
         NodeList objectTypes = doc.getElementsByTagName("object-type");
         for (int i = 0; i < objectTypes.getLength(); i++) {
             Element objectType = (Element) objectTypes.item(i);
@@ -126,9 +126,9 @@ public class OcelObjectsReader extends AbstractDataReader {
      * Iterates through the top-level <objects> section, adding one row per
      * object.
      */
-    private void parseObjects(Document doc) {
+    private void parseObjectsXml(Document doc) {
         Element root = doc.getDocumentElement();
-        Element objectsSection = getChildElement(root, "objects");
+        Element objectsSection = getChildElementXml(root, "objects");
         if (objectsSection == null) return;
 
         NodeList children = objectsSection.getChildNodes();
@@ -136,14 +136,14 @@ public class OcelObjectsReader extends AbstractDataReader {
             if (!(children.item(i) instanceof Element)) continue;
             Element objectEl = (Element) children.item(i);
             if (!objectEl.getTagName().equals("object")) continue;
-            parseObject(objectEl);
+            parseObjectXml(objectEl);
         }
     }
 
     /**
      * Parses a single object element into one table row.
      */
-    private void parseObject(Element object) {
+    private void parseObjectXml(Element object) {
         String type = object.getAttribute("type");
 
         // Core OCEL fields
@@ -151,15 +151,15 @@ public class OcelObjectsReader extends AbstractDataReader {
         getStringColumn("ocel:type").append(type);
 
         // Type-specific attributes (column names are prefixed by type)
-        Element attributesEl = getChildElement(object, "attributes");
+        Element attributesEl = getChildElementXml(object, "attributes");
         if (attributesEl != null) {
-            parseObjectAttributes(type, attributesEl);
+            parseObjectAttributesXml(type, attributesEl);
         }
 
         // Object-to-object relationships (same wrapper convention as events)
-        Element relationshipsEl = getChildElement(object, "objects");
+        Element relationshipsEl = getChildElementXml(object, "objects");
         List<String[]> relationships = relationshipsEl != null
-                ? extractRelationships(relationshipsEl) : Collections.emptyList();
+                ? extractRelationshipsXml(relationshipsEl) : Collections.emptyList();
 
         getStringColumn("ocel:object-relationships").append(buildRelationshipsJson(relationships));
 
@@ -176,7 +176,7 @@ public class OcelObjectsReader extends AbstractDataReader {
      * order; a stricter implementation could compare the "time" attributes
      * directly.
      */
-    private void parseObjectAttributes(String objectType, Element attributesEl) {
+    private void parseObjectAttributesXml(String objectType, Element attributesEl) {
         Map<String, String> latest = new LinkedHashMap<>();
         NodeList attrs = attributesEl.getElementsByTagName("attribute");
         for (int i = 0; i < attrs.getLength(); i++) {
@@ -192,7 +192,7 @@ public class OcelObjectsReader extends AbstractDataReader {
      * Extracts object-id and qualifier pairs from an <objects> wrapper
      * element. Handles both "qualifier" and "relationship" attribute names.
      */
-    private List<String[]> extractRelationships(Element relationshipsEl) {
+    private List<String[]> extractRelationshipsXml(Element relationshipsEl) {
         List<String[]> relationships = new ArrayList<>();
         NodeList children = relationshipsEl.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
@@ -390,7 +390,7 @@ public class OcelObjectsReader extends AbstractDataReader {
 
     // ---- XML helpers ----
 
-    private Element getChildElement(Element parent, String tagName) {
+    private Element getChildElementXml(Element parent, String tagName) {
         NodeList children = parent.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             if (children.item(i) instanceof Element) {
