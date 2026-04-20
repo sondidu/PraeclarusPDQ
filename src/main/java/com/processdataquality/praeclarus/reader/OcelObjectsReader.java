@@ -3,6 +3,7 @@ package com.processdataquality.praeclarus.reader;
 import com.processdataquality.praeclarus.annotation.Plugin;
 import com.processdataquality.praeclarus.option.FileOption;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -15,6 +16,7 @@ import tech.tablesaw.api.*;
 import tech.tablesaw.columns.Column;
 import tech.tablesaw.io.ReadOptions;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
@@ -52,15 +54,11 @@ public class OcelObjectsReader extends AbstractDataReader {
     @Override
     public Table read() throws IOException {
         try {
-            InputStream is = getSourceAsInputStream();
-            if (is == null) {
+            InputStream raw = getSourceAsInputStream();
+            if (raw == null) {
                 throw new IOException("No OCEL input source specified");
             }
-
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.parse(is);
-            doc.getDocumentElement().normalize();
+            BufferedInputStream is = new BufferedInputStream(raw);
 
             // Seed the core columns first so they appear at the start of the
             // output table, ahead of any type-specific attribute columns.
@@ -68,14 +66,25 @@ public class OcelObjectsReader extends AbstractDataReader {
             getStringColumn("ocel:type");
             getStringColumn("ocel:object-relationships");
 
-            readObjectTypes(doc);
-            parseObjects(doc);
+            if (isJson(is)) {
+                JsonNode doc = _mapper.readTree(is);
+                readObjectTypesJson(doc);
+                parseObjectsJson(doc);
+            } else {
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                DocumentBuilder builder = factory.newDocumentBuilder();
+                Document doc = builder.parse(is);
+                doc.getDocumentElement().normalize();
+
+                readObjectTypes(doc);
+                parseObjects(doc);
+            }
 
             return Table.create(new ArrayList<>(_columns.values()));
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("Failed to load OCEL XML file", e);
+            throw new IOException("Failed to load OCEL file", e);
         }
     }
 
@@ -214,6 +223,105 @@ public class OcelObjectsReader extends AbstractDataReader {
             array.add(obj);
         }
         return array.toString();
+    }
+
+    // ---- JSON parsing ----
+
+    /**
+     * Peeks at the first non-whitespace byte to decide whether the stream
+     * holds JSON ('{' or '[') or XML. Resets the stream so the chosen parser
+     * sees the full content.
+     */
+    private boolean isJson(BufferedInputStream is) throws IOException {
+        is.mark(64);
+        int b;
+        do { b = is.read(); } while (b != -1 && Character.isWhitespace(b));
+        is.reset();
+        return b == '{' || b == '[';
+    }
+
+    /**
+     * Reads object-type definitions from the JSON objectTypes array, building
+     * the prefixed "<objectType>:<attrName>" to OCEL type map used when
+     * creating typed columns during parseObjectJson.
+     */
+    private void readObjectTypesJson(JsonNode doc) {
+        JsonNode objectTypes = doc.get("objectTypes");
+        if (objectTypes == null || !objectTypes.isArray()) return;
+        for (JsonNode ot : objectTypes) {
+            String typeName = ot.path("name").asText("");
+            JsonNode attrs = ot.get("attributes");
+            if (attrs == null || !attrs.isArray()) continue;
+            for (JsonNode a : attrs) {
+                String name = a.path("name").asText("");
+                String type = a.path("type").asText("");
+                if (!name.isEmpty() && !type.isEmpty()) {
+                    _attributeTypes.put(typeName + ":" + name, type);
+                }
+            }
+        }
+    }
+
+    /**
+     * Iterates through the JSON objects array, adding one row per object.
+     */
+    private void parseObjectsJson(JsonNode doc) {
+        JsonNode objects = doc.get("objects");
+        if (objects == null || !objects.isArray()) return;
+        for (JsonNode object : objects) {
+            parseObjectJson(object);
+        }
+    }
+
+    /**
+     * Parses a single JSON object into one table row.
+     */
+    private void parseObjectJson(JsonNode object) {
+        String type = object.path("type").asText("");
+
+        getStringColumn("ocel:oid").append(object.path("id").asText(""));
+        getStringColumn("ocel:type").append(type);
+
+        JsonNode attrs = object.get("attributes");
+        if (attrs != null && attrs.isArray()) {
+            parseObjectAttributesJson(type, attrs);
+        }
+
+        JsonNode rels = object.get("relationships");
+        List<String[]> relationships = extractRelationshipsJson(rels);
+        getStringColumn("ocel:object-relationships").append(buildRelationshipsJson(relationships));
+
+        padColumns(getRowCount());
+    }
+
+    /**
+     * Collects typed attribute values for the current JSON object with
+     * last-value-wins semantics for time-varying attributes, matching the XML
+     * path. Document order is assumed to reflect temporal order.
+     */
+    private void parseObjectAttributesJson(String objectType, JsonNode attrs) {
+        Map<String, String> latest = new LinkedHashMap<>();
+        for (JsonNode a : attrs) {
+            latest.put(a.path("name").asText(""), a.path("value").asText(""));
+        }
+        for (Map.Entry<String, String> entry : latest.entrySet()) {
+            appendTypedValue(objectType + ":" + entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * Extracts object-id and qualifier pairs from a JSON relationships array.
+     */
+    private List<String[]> extractRelationshipsJson(JsonNode rels) {
+        List<String[]> relationships = new ArrayList<>();
+        if (rels == null || !rels.isArray()) return relationships;
+        for (JsonNode r : rels) {
+            relationships.add(new String[]{
+                    r.path("objectId").asText(""),
+                    r.path("qualifier").asText("")
+            });
+        }
+        return relationships;
     }
 
     // ---- Typed value handling ----
