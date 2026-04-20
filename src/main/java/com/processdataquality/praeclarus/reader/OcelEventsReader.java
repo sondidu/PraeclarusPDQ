@@ -71,9 +71,9 @@ public class OcelEventsReader extends AbstractDataReader {
                 Document doc = builder.parse(is);
                 doc.getDocumentElement().normalize();
 
-                readEventTypes(doc);
-                readObjectIdTypes(doc);
-                parseEvents(doc);
+                readEventTypesXml(doc);
+                readObjectIdTypesXml(doc);
+                parseEventsXml(doc);
             }
 
             return Table.create(new ArrayList<>(_columns.values()));
@@ -100,7 +100,7 @@ public class OcelEventsReader extends AbstractDataReader {
      * Reads event-type definitions to build an attribute name -> type map.
      * This allows creating properly typed columns for event attributes.
      */
-    private void readEventTypes(Document doc) {
+    private void readEventTypesXml(Document doc) {
         NodeList eventTypes = doc.getElementsByTagName("event-type");
         for (int i = 0; i < eventTypes.getLength(); i++) {
             Element eventType = (Element) eventTypes.item(i);
@@ -122,9 +122,9 @@ public class OcelEventsReader extends AbstractDataReader {
      * per-object-type column, since event <relationship> elements only carry
      * the object-id, not its type.
      */
-    private void readObjectIdTypes(Document doc) {
+    private void readObjectIdTypesXml(Document doc) {
         Element root = doc.getDocumentElement();
-        Element objectsSection = getChildElement(root, "objects");
+        Element objectsSection = getChildElementXml(root, "objects");
         if (objectsSection == null) return;
 
         NodeList children = objectsSection.getChildNodes();
@@ -143,12 +143,12 @@ public class OcelEventsReader extends AbstractDataReader {
     /**
      * Iterates through all event elements and adds each as a row.
      */
-    private void parseEvents(Document doc) {
+    private void parseEventsXml(Document doc) {
         NodeList events = doc.getElementsByTagName("event");
         for (int i = 0; i < events.getLength(); i++) {
             Node node = events.item(i);
             if (node instanceof Element && node.getParentNode().getNodeName().equals("events")) {
-                parseEvent((Element) node);
+                parseEventXml((Element) node);
             }
         }
     }
@@ -156,24 +156,24 @@ public class OcelEventsReader extends AbstractDataReader {
     /**
      * Parses a single event element into one table row.
      */
-    private void parseEvent(Element event) {
+    private void parseEventXml(Element event) {
         // Core OCEL fields
         getStringColumn("ocel:eid").append(event.getAttribute("id"));
         getStringColumn("ocel:activity").append(event.getAttribute("type"));
         getDateTimeColumn("ocel:timestamp").append(parseTimestamp(event.getAttribute("time")));
 
         // Event attributes
-        Element attributesEl = getChildElement(event, "attributes");
+        Element attributesEl = getChildElementXml(event, "attributes");
         if (attributesEl != null) {
-            parseEventAttributes(attributesEl);
+            parseEventAttributesXml(attributesEl);
         }
 
         // Event-to-object relationships, grouped into one column per object
         // type. Each cell holds a JSON array of {objectId, qualifier}. Types
         // the event does not reference are left missing via padColumns below.
-        Element objectsEl = getChildElement(event, "objects");
+        Element objectsEl = getChildElementXml(event, "objects");
         List<String[]> relationships = objectsEl != null
-                ? extractRelationships(objectsEl) : Collections.emptyList();
+                ? extractRelationshipsXml(objectsEl) : Collections.emptyList();
         writeGroupedRelationships(relationships);
 
         padColumns(getRowCount());
@@ -182,7 +182,7 @@ public class OcelEventsReader extends AbstractDataReader {
     /**
      * Appends typed values for each attribute in the attributes element.
      */
-    private void parseEventAttributes(Element attributesEl) {
+    private void parseEventAttributesXml(Element attributesEl) {
         NodeList attrs = attributesEl.getElementsByTagName("attribute");
         for (int i = 0; i < attrs.getLength(); i++) {
             Element attr = (Element) attrs.item(i);
@@ -196,7 +196,7 @@ public class OcelEventsReader extends AbstractDataReader {
      * Extracts object-id and qualifier pairs from an event's objects element.
      * Handles both "qualifier" and "relationship" attribute names.
      */
-    private List<String[]> extractRelationships(Element objectsEl) {
+    private List<String[]> extractRelationshipsXml(Element objectsEl) {
         List<String[]> relationships = new ArrayList<>();
         NodeList children = objectsEl.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
@@ -264,7 +264,7 @@ public class OcelEventsReader extends AbstractDataReader {
 
     /**
      * Reads event-type definitions from the JSON eventTypes array, mirroring
-     * readEventTypes for the XML path.
+     * readEventTypesXml for the XML path.
      */
     private void readEventTypesJson(JsonNode doc) {
         JsonNode eventTypes = doc.get("eventTypes");
@@ -416,7 +416,7 @@ public class OcelEventsReader extends AbstractDataReader {
 
     // ---- XML helpers ----
 
-    private Element getChildElement(Element parent, String tagName) {
+    private Element getChildElementXml(Element parent, String tagName) {
         NodeList children = parent.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             if (children.item(i) instanceof Element) {
