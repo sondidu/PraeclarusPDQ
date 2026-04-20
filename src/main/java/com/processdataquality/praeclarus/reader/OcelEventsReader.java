@@ -3,6 +3,7 @@ package com.processdataquality.praeclarus.reader;
 import com.processdataquality.praeclarus.annotation.Plugin;
 import com.processdataquality.praeclarus.option.FileOption;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -16,6 +17,7 @@ import tech.tablesaw.api.*;
 import tech.tablesaw.columns.Column;
 import tech.tablesaw.io.ReadOptions;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
@@ -52,25 +54,33 @@ public class OcelEventsReader extends AbstractDataReader {
     @Override
     public Table read() throws IOException {
         try {
-            InputStream is = getSourceAsInputStream();
-            if (is == null) {
+            InputStream raw = getSourceAsInputStream();
+            if (raw == null) {
                 throw new IOException("No OCEL input source specified");
             }
+            BufferedInputStream is = new BufferedInputStream(raw);
 
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.parse(is);
-            doc.getDocumentElement().normalize();
+            if (isJson(is)) {
+                JsonNode doc = _mapper.readTree(is);
+                readEventTypesJson(doc);
+                readObjectIdTypesJson(doc);
+                parseEventsJson(doc);
+            } else {
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                DocumentBuilder builder = factory.newDocumentBuilder();
+                Document doc = builder.parse(is);
+                doc.getDocumentElement().normalize();
 
-            readEventTypes(doc);
-            readObjectIdTypes(doc);
-            parseEvents(doc);
+                readEventTypes(doc);
+                readObjectIdTypes(doc);
+                parseEvents(doc);
+            }
 
             return Table.create(new ArrayList<>(_columns.values()));
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("Failed to load OCEL XML file", e);
+            throw new IOException("Failed to load OCEL file", e);
         }
     }
 
@@ -164,16 +174,7 @@ public class OcelEventsReader extends AbstractDataReader {
         Element objectsEl = getChildElement(event, "objects");
         List<String[]> relationships = objectsEl != null
                 ? extractRelationships(objectsEl) : Collections.emptyList();
-
-        Map<String, List<String[]>> byType = new LinkedHashMap<>();
-        for (String[] rel : relationships) {
-            String type = _objectIdToType.get(rel[0]);
-            if (type == null) continue; // referenced id not declared in <objects>
-            byType.computeIfAbsent(type, k -> new ArrayList<>()).add(rel);
-        }
-        for (Map.Entry<String, List<String[]>> entry : byType.entrySet()) {
-            getStringColumn(entry.getKey()).append(buildRelationshipsJson(entry.getValue()));
-        }
+        writeGroupedRelationships(relationships);
 
         padColumns(getRowCount());
     }
@@ -226,6 +227,130 @@ public class OcelEventsReader extends AbstractDataReader {
             array.add(obj);
         }
         return array.toString();
+    }
+
+    /**
+     * Groups relationships by their object's type (resolved via the id-to-type
+     * lookup) and writes one JSON array per type into the corresponding column.
+     * Relationships referencing an id that was not declared in the objects
+     * section are silently dropped.
+     */
+    private void writeGroupedRelationships(List<String[]> relationships) {
+        Map<String, List<String[]>> byType = new LinkedHashMap<>();
+        for (String[] rel : relationships) {
+            String type = _objectIdToType.get(rel[0]);
+            if (type == null) continue;
+            byType.computeIfAbsent(type, k -> new ArrayList<>()).add(rel);
+        }
+        for (Map.Entry<String, List<String[]>> entry : byType.entrySet()) {
+            getStringColumn(entry.getKey()).append(buildRelationshipsJson(entry.getValue()));
+        }
+    }
+
+    // ---- JSON parsing ----
+
+    /**
+     * Peeks at the first non-whitespace byte to decide whether the stream
+     * holds JSON ('{' or '[') or XML. Resets the stream so the chosen parser
+     * sees the full content.
+     */
+    private boolean isJson(BufferedInputStream is) throws IOException {
+        is.mark(64);
+        int b;
+        do { b = is.read(); } while (b != -1 && Character.isWhitespace(b));
+        is.reset();
+        return b == '{' || b == '[';
+    }
+
+    /**
+     * Reads event-type definitions from the JSON eventTypes array, mirroring
+     * readEventTypes for the XML path.
+     */
+    private void readEventTypesJson(JsonNode doc) {
+        JsonNode eventTypes = doc.get("eventTypes");
+        if (eventTypes == null || !eventTypes.isArray()) return;
+        for (JsonNode et : eventTypes) {
+            JsonNode attrs = et.get("attributes");
+            if (attrs == null || !attrs.isArray()) continue;
+            for (JsonNode a : attrs) {
+                String name = a.path("name").asText("");
+                String type = a.path("type").asText("");
+                if (!name.isEmpty() && !type.isEmpty()) {
+                    _attributeTypes.put(name, type);
+                }
+            }
+        }
+    }
+
+    /**
+     * Builds the object-id to object-type lookup from the JSON objects array.
+     */
+    private void readObjectIdTypesJson(JsonNode doc) {
+        JsonNode objects = doc.get("objects");
+        if (objects == null || !objects.isArray()) return;
+        for (JsonNode o : objects) {
+            String id = o.path("id").asText("");
+            String type = o.path("type").asText("");
+            if (!id.isEmpty() && !type.isEmpty()) {
+                _objectIdToType.put(id, type);
+            }
+        }
+    }
+
+    /**
+     * Iterates through the JSON events array and adds each as a row.
+     */
+    private void parseEventsJson(JsonNode doc) {
+        JsonNode events = doc.get("events");
+        if (events == null || !events.isArray()) return;
+        for (JsonNode event : events) {
+            parseEventJson(event);
+        }
+    }
+
+    /**
+     * Parses a single JSON event into one table row.
+     */
+    private void parseEventJson(JsonNode event) {
+        getStringColumn("ocel:eid").append(event.path("id").asText(""));
+        getStringColumn("ocel:activity").append(event.path("type").asText(""));
+        getDateTimeColumn("ocel:timestamp").append(parseTimestamp(event.path("time").asText("")));
+
+        JsonNode attrs = event.get("attributes");
+        if (attrs != null && attrs.isArray()) {
+            parseEventAttributesJson(attrs);
+        }
+
+        JsonNode rels = event.get("relationships");
+        writeGroupedRelationships(extractRelationshipsJson(rels));
+
+        padColumns(getRowCount());
+    }
+
+    /**
+     * Appends typed values for each JSON attribute entry.
+     */
+    private void parseEventAttributesJson(JsonNode attrs) {
+        for (JsonNode a : attrs) {
+            String name = a.path("name").asText("");
+            String value = a.path("value").asText("");
+            appendTypedValue(name, value);
+        }
+    }
+
+    /**
+     * Extracts object-id and qualifier pairs from a JSON relationships array.
+     */
+    private List<String[]> extractRelationshipsJson(JsonNode rels) {
+        List<String[]> relationships = new ArrayList<>();
+        if (rels == null || !rels.isArray()) return relationships;
+        for (JsonNode r : rels) {
+            relationships.add(new String[]{
+                    r.path("objectId").asText(""),
+                    r.path("qualifier").asText("")
+            });
+        }
+        return relationships;
     }
 
     // ---- Typed value handling ----
