@@ -41,6 +41,7 @@ public class OcelEventsReader extends AbstractDataReader {
 
     private final Map<String, Column<?>> _columns = new LinkedHashMap<>();
     private final Map<String, String> _attributeTypes = new HashMap<>();
+    private final Map<String, String> _objectIdToType = new HashMap<>();
     private final ObjectMapper _mapper = new ObjectMapper();
 
     public OcelEventsReader() {
@@ -62,6 +63,7 @@ public class OcelEventsReader extends AbstractDataReader {
             doc.getDocumentElement().normalize();
 
             readEventTypes(doc);
+            readObjectIdTypes(doc);
             parseEvents(doc);
 
             return Table.create(new ArrayList<>(_columns.values()));
@@ -105,6 +107,30 @@ public class OcelEventsReader extends AbstractDataReader {
     }
 
     /**
+     * Builds an object-id to object-type lookup from the top-level <objects>
+     * section. Required to group each event's relationships into the correct
+     * per-object-type column, since event <relationship> elements only carry
+     * the object-id, not its type.
+     */
+    private void readObjectIdTypes(Document doc) {
+        Element root = doc.getDocumentElement();
+        Element objectsSection = getChildElement(root, "objects");
+        if (objectsSection == null) return;
+
+        NodeList children = objectsSection.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (!(children.item(i) instanceof Element)) continue;
+            Element objectEl = (Element) children.item(i);
+            if (!objectEl.getTagName().equals("object")) continue;
+            String id = objectEl.getAttribute("id");
+            String type = objectEl.getAttribute("type");
+            if (!id.isEmpty() && !type.isEmpty()) {
+                _objectIdToType.put(id, type);
+            }
+        }
+    }
+
+    /**
      * Iterates through all event elements and adds each as a row.
      */
     private void parseEvents(Document doc) {
@@ -132,12 +158,22 @@ public class OcelEventsReader extends AbstractDataReader {
             parseEventAttributes(attributesEl);
         }
 
-        // Event-to-object relationships
+        // Event-to-object relationships, grouped into one column per object
+        // type. Each cell holds a JSON array of {objectId, qualifier}. Types
+        // the event does not reference are left missing via padColumns below.
         Element objectsEl = getChildElement(event, "objects");
         List<String[]> relationships = objectsEl != null
                 ? extractRelationships(objectsEl) : Collections.emptyList();
 
-        getStringColumn("ocel:relationships").append(buildRelationshipsJson(relationships));
+        Map<String, List<String[]>> byType = new LinkedHashMap<>();
+        for (String[] rel : relationships) {
+            String type = _objectIdToType.get(rel[0]);
+            if (type == null) continue; // referenced id not declared in <objects>
+            byType.computeIfAbsent(type, k -> new ArrayList<>()).add(rel);
+        }
+        for (Map.Entry<String, List<String[]>> entry : byType.entrySet()) {
+            getStringColumn(entry.getKey()).append(buildRelationshipsJson(entry.getValue()));
+        }
 
         padColumns(getRowCount());
     }
