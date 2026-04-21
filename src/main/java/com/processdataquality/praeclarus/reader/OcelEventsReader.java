@@ -243,7 +243,7 @@ public class OcelEventsReader extends AbstractDataReader {
             byType.computeIfAbsent(type, k -> new ArrayList<>()).add(rel);
         }
         for (Map.Entry<String, List<String[]>> entry : byType.entrySet()) {
-            getStringColumn(entry.getKey()).append(buildRelationshipsJson(entry.getValue()));
+            getStringColumn("ocel:object:" + entry.getKey()).append(buildRelationshipsJson(entry.getValue()));
         }
     }
 
