@@ -57,11 +57,26 @@ public class FileSaveEditor extends AbstractFileEditor {
 
     protected String getOpts() {
         String[] parts = getFileDescriptors();
-        if (parts.length == 3) {
-            return String.format("{\"types\": [{ \"description\": \"%s\", " +
-                    "\"accept\": {\"%s\": [\"%s\"]}}]}", (Object[]) parts);
+        if (parts == null || parts.length == 0 || parts.length % 3 != 0) {
+            return "{}";
         }
-        return "{}";
+        // Build a multi-type accept spec for showSaveFilePicker. Each trio
+        // (description, mime, ext) becomes one entry in `types[]`. The ext
+        // field may be a comma-separated list to allow several extensions
+        // per type, e.g. ".xml,.xmlocel".
+        StringBuilder types = new StringBuilder();
+        for (int i = 0; i < parts.length; i += 3) {
+            if (i > 0) types.append(",");
+            types.append("{\"description\":\"").append(parts[i])
+                    .append("\",\"accept\":{\"").append(parts[i + 1]).append("\":[");
+            String[] exts = parts[i + 2].split(",");
+            for (int j = 0; j < exts.length; j++) {
+                if (j > 0) types.append(",");
+                types.append("\"").append(exts[j].trim()).append("\"");
+            }
+            types.append("]}}");
+        }
+        return "{\"types\":[" + types + "]}";
     }
 
 
