@@ -23,6 +23,7 @@ import tech.tablesaw.io.WriteOptions;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -283,8 +284,14 @@ public class OcelWriter extends AbstractDataWriter {
         root.set("objects", buildObjectsJson(objects));
         root.set("events", buildEventsJson(events));
 
+        // Serialise to a string then write+flush ourselves. Going through
+        // ObjectMapper.writeValue(OutputStream,...) calls close() on the
+        // stream without calling flush(), and the destination's LogWriter
+        // only ships bytes to the browser when flush() fires.
+        String json = _mapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
         try (OutputStream out = getDestinationAsOutputStream()) {
-            _mapper.writerWithDefaultPrettyPrinter().writeValue(out, root);
+            out.write(json.getBytes(StandardCharsets.UTF_8));
+            out.flush();
         }
     }
 
