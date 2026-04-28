@@ -80,7 +80,9 @@ public class OcelObjectsReader extends AbstractDataReader {
                 parseObjectsXml(doc);
             }
 
-            return Table.create(new ArrayList<>(_columns.values()));
+            Table table = Table.create(new ArrayList<>(_columns.values()));
+            getAuxiliaryDatasets().put("ocel:objects", table);
+            return table;
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
