@@ -50,9 +50,11 @@ import javax.xml.transform.stream.StreamResult;
         name = "OCEL Writer",
         author = "Sean Dewantoro",
         version = "1.0",
-        synopsis = "Writes events and objects tables to an OCEL 2.0 file (XML or " +
-                "JSON, chosen by destination filename extension). Connect both an " +
-                "OCEL Events Reader and an OCEL Objects Reader as predecessors.",
+        synopsis = "Writes an OCEL 2.0 file (XML or JSON, chosen by destination " +
+                "filename extension). Connect an OCEL Events Reader as a " +
+                "predecessor (required). Optionally connect an OCEL Objects " +
+                "Reader to include an objects section — its table is read " +
+                "from auxData under the key \"ocel:objects\".",
         fileDescriptors = "OCEL XML Files;application/xml;.xmlocel,.xml;" +
                 "OCEL JSON Files;application/json;.jsonocel,.json"
 )
@@ -68,9 +70,12 @@ public class OcelWriter extends AbstractDataWriter {
     }
 
     /**
-     * Allow two predecessors so both readers (events and objects) can connect
-     * directly. WriterNode still passes only one of their outputs as the main
-     * input; the other reader's contribution reaches us via auxData.
+     * Allow up to two predecessors so an OCEL Objects Reader can optionally
+     * connect alongside the OCEL Events Reader. WriterNode passes only one
+     * predecessor's output as the main `table` arg (HashSet-ordered, so it
+     * could be either reader's table); the other reaches us via auxData.
+     * Events is required; if no objects table is present in auxData, the
+     * writer emits empty object-types and objects sections.
      */
     @Override
     public int getMaxInputs() {
@@ -89,15 +94,15 @@ public class OcelWriter extends AbstractDataWriter {
         Table events = (table != null && table.columnNames().contains("ocel:eid"))
                 ? table
                 : auxData.getTable("ocel:events");
+        // Objects is optional — connecting an OCEL Objects Reader populates
+        // this via auxData. If absent, the writer emits empty object-types
+        // and objects sections, but events (with their relationships) are
+        // written as-is.
         Table objects = auxData.getTable("ocel:objects");
 
         if (events == null) {
             throw new IOException("OcelWriter: no events table found. " +
                     "Connect an OCEL Events Reader as a predecessor.");
-        }
-        if (objects == null) {
-            throw new IOException("OcelWriter: no objects table found in auxData. " +
-                    "Connect an OCEL Objects Reader as a predecessor.");
         }
 
         if (isJsonDestination()) {
@@ -152,6 +157,7 @@ public class OcelWriter extends AbstractDataWriter {
     private void writeObjectTypesXml(Document doc, Element root, Table objects) {
         Element objectTypesEl = doc.createElement("object-types");
         root.appendChild(objectTypesEl);
+        if (objects == null) return;
 
         for (Map.Entry<String, List<Column<?>>> entry :
                 collectObjectAttrColumnsByType(objects).entrySet()) {
@@ -193,6 +199,7 @@ public class OcelWriter extends AbstractDataWriter {
     private void writeObjectsXml(Document doc, Element root, Table objects) {
         Element objectsEl = doc.createElement("objects");
         root.appendChild(objectsEl);
+        if (objects == null) return;
 
         StringColumn oidCol = (StringColumn) objects.column("ocel:oid");
         StringColumn typeCol = (StringColumn) objects.column("ocel:type");
@@ -297,6 +304,7 @@ public class OcelWriter extends AbstractDataWriter {
 
     private ArrayNode buildObjectTypesJson(Table objects) {
         ArrayNode array = _mapper.createArrayNode();
+        if (objects == null) return array;
         for (Map.Entry<String, List<Column<?>>> entry :
                 collectObjectAttrColumnsByType(objects).entrySet()) {
             String typeName = entry.getKey();
@@ -336,6 +344,7 @@ public class OcelWriter extends AbstractDataWriter {
 
     private ArrayNode buildObjectsJson(Table objects) {
         ArrayNode array = _mapper.createArrayNode();
+        if (objects == null) return array;
         StringColumn oidCol = (StringColumn) objects.column("ocel:oid");
         StringColumn typeCol = (StringColumn) objects.column("ocel:type");
         StringColumn relCol = (StringColumn) objects.column("ocel:object-relationships");
