@@ -51,10 +51,11 @@ import javax.xml.transform.stream.StreamResult;
         author = "Sean Dewantoro",
         version = "1.0",
         synopsis = "Writes an OCEL 2.0 file (XML or JSON, chosen by destination " +
-                "filename extension). Connect an OCEL Events Reader as a " +
-                "predecessor (required). Optionally connect an OCEL Objects " +
-                "Reader to include an objects section — its table is read " +
-                "from auxData under the key \"ocel:objects\".",
+                "filename extension). Takes a single predecessor whose output " +
+                "is the events table — an OCEL Events Reader directly, or an " +
+                "OCEL Combiner to also include objects. An objects section is " +
+                "written when an objects table is supplied via auxData under " +
+                "the key \"ocel:objects\" (the OCEL Combiner does this).",
         fileDescriptors = "OCEL XML Files;application/xml;.xmlocel,.xml;" +
                 "OCEL JSON Files;application/json;.jsonocel,.json"
 )
@@ -69,19 +70,6 @@ public class OcelWriter extends AbstractDataWriter {
         super();
     }
 
-    /**
-     * Allow up to two predecessors so an OCEL Objects Reader can optionally
-     * connect alongside the OCEL Events Reader. WriterNode passes only one
-     * predecessor's output as the main `table` arg (HashSet-ordered, so it
-     * could be either reader's table); the other reaches us via auxData.
-     * Events is required; if no objects table is present in auxData, the
-     * writer emits empty object-types and objects sections.
-     */
-    @Override
-    public int getMaxInputs() {
-        return 2;
-    }
-
     @Override
     protected WriteOptions getWriteOptions() {
         return null;
@@ -89,20 +77,18 @@ public class OcelWriter extends AbstractDataWriter {
 
     @Override
     public void write(Table table, DataCollection auxData) throws IOException {
-        // Events lives in two places (main input and auxData) so we don't
-        // depend on WriterNode's HashSet ordering of predecessors.
-        Table events = (table != null && table.columnNames().contains("ocel:eid"))
-                ? table
-                : auxData.getTable("ocel:events");
-        // Objects is optional — connecting an OCEL Objects Reader populates
-        // this via auxData. If absent, the writer emits empty object-types
-        // and objects sections, but events (with their relationships) are
-        // written as-is.
+        // The single predecessor's output is the events table (WriterNode
+        // passes it as `table`). Objects are optional and arrive via auxData
+        // under "ocel:objects" — the OCEL Combiner puts them there. If absent,
+        // the writer emits empty object-types and objects sections, but events
+        // (with their relationships) are written as-is.
+        Table events = table;
         Table objects = auxData.getTable("ocel:objects");
 
         if (events == null) {
-            throw new IOException("OcelWriter: no events table found. " +
-                    "Connect an OCEL Events Reader as a predecessor.");
+            throw new IOException("OcelWriter: no events table found. Connect " +
+                    "a predecessor that outputs the OCEL events table (an OCEL " +
+                    "Events Reader, or an OCEL Combiner).");
         }
 
         if (isJsonDestination()) {
