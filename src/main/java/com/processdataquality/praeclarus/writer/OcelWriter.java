@@ -60,9 +60,6 @@ import javax.xml.transform.stream.StreamResult;
                 "OCEL JSON Files;application/json;.jsonocel,.json"
 )
 public class OcelWriter extends AbstractDataWriter {
-    // Object attributes lost their original time= during reading (last-value-
-    // wins collapse), so we emit a sentinel epoch on write.
-    private static final String EPOCH_TIME = "1970-01-01T00:00:00Z";
 
     private final ObjectMapper _mapper = new ObjectMapper();
 
@@ -200,13 +197,16 @@ public class OcelWriter extends AbstractDataWriter {
 
             Element attrsEl = doc.createElement("attributes");
             for (Column<?> col : attrsByType.getOrDefault(type, Collections.emptyList())) {
-                String value = cellToString(col, row);
-                if (value == null) continue;
-                Element attrEl = doc.createElement("attribute");
-                attrEl.setAttribute("name", stripPrefix(col.name(), type));
-                attrEl.setAttribute("time", EPOCH_TIME);
-                attrEl.setTextContent(value);
-                attrsEl.appendChild(attrEl);
+                String history = cellToString(col, row);
+                if (history == null) continue;
+                String attrName = stripPrefix(col.name(), type);
+                for (String[] entry : parseHistory(history)) {
+                    Element attrEl = doc.createElement("attribute");
+                    attrEl.setAttribute("name", attrName);
+                    attrEl.setAttribute("time", entry[0]);
+                    attrEl.setTextContent(entry[1]);
+                    attrsEl.appendChild(attrEl);
+                }
             }
             if (attrsEl.hasChildNodes()) objectEl.appendChild(attrsEl);
 
@@ -344,13 +344,16 @@ public class OcelWriter extends AbstractDataWriter {
 
             ArrayNode attrs = _mapper.createArrayNode();
             for (Column<?> col : attrsByType.getOrDefault(type, Collections.emptyList())) {
-                String value = cellToString(col, row);
-                if (value == null) continue;
-                ObjectNode attr = _mapper.createObjectNode();
-                attr.put("name", stripPrefix(col.name(), type));
-                attr.put("value", value);
-                attr.put("time", EPOCH_TIME);
-                attrs.add(attr);
+                String history = cellToString(col, row);
+                if (history == null) continue;
+                String attrName = stripPrefix(col.name(), type);
+                for (String[] entry : parseHistory(history)) {
+                    ObjectNode attr = _mapper.createObjectNode();
+                    attr.put("name", attrName);
+                    attr.put("time", entry[0]);
+                    attr.put("value", entry[1]);
+                    attrs.add(attr);
+                }
             }
             obj.set("attributes", attrs);
 
@@ -512,6 +515,30 @@ public class OcelWriter extends AbstractDataWriter {
         } catch (IOException e) {
             // Treat unparseable relationship JSON as none, rather than failing
             // the whole write.
+        }
+        return result;
+    }
+
+    /**
+     * Parses an object-attribute history column (a JSON array of
+     * {"time","value"} entries produced by the OCEL Objects Reader) into a list
+     * of [time, value] pairs. An empty array yields no entries. Unparseable
+     * JSON is treated as no entries rather than failing the whole write.
+     */
+    private List<String[]> parseHistory(String json) {
+        if (json == null || json.isEmpty()) return Collections.emptyList();
+        List<String[]> result = new ArrayList<>();
+        try {
+            JsonNode arr = _mapper.readTree(json);
+            if (!arr.isArray()) return result;
+            for (JsonNode entry : arr) {
+                result.add(new String[]{
+                        entry.path("time").asText(""),
+                        entry.path("value").asText("")
+                });
+            }
+        } catch (IOException e) {
+            // Treat unparseable history JSON as none.
         }
         return result;
     }
