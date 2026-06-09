@@ -56,8 +56,12 @@ import javax.xml.transform.stream.StreamResult;
                 "OCEL Combiner to also include objects. An objects section is " +
                 "written when an objects table is supplied via auxData under " +
                 "the key \"ocel:objects\" (the OCEL Combiner does this).",
-        fileDescriptors = "OCEL XML Files;application/xml;.xmlocel,.xml;" +
-                "OCEL JSON Files;application/json;.jsonocel,.json"
+        // FileSaveEditor renders a single-type save dialog only, so this
+        // multi-type descriptor degrades to an unfiltered picker. That is the
+        // intended behaviour: the output format (XML vs JSON) is chosen from
+        // the destination filename extension — see isJsonDestination().
+        fileDescriptors = "OCEL XML Files;application/xml;.xmlocel;" +
+                "OCEL JSON Files;application/json;.jsonocel"
 )
 public class OcelWriter extends AbstractDataWriter {
 
