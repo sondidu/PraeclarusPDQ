@@ -51,7 +51,8 @@ import javax.xml.transform.stream.StreamResult;
         author = "Sean Dewantoro",
         version = "1.0",
         synopsis = "Writes an OCEL 2.0 file (XML or JSON, chosen by destination " +
-                "filename extension). Takes a single predecessor whose output " +
+                "filename extension: .xml, .xmlocel, .json, .jsonocel). Takes a " +
+                "single predecessor whose output " +
                 "is the events table — an OCEL Events Reader directly, or an " +
                 "OCEL Combiner to also include objects. An objects section is " +
                 "written when an objects table is supplied via auxData under " +
