@@ -25,7 +25,6 @@ import tech.tablesaw.api.*;
 import tech.tablesaw.columns.Column;
 import tech.tablesaw.io.ReadOptions;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
@@ -266,22 +265,4 @@ public class XesDataReader extends AbstractDataReader {
             column.appendMissing();
         }
     }
-
-    
-    public static void main(String[] args) {
-        XesDataReader reader = new XesDataReader();
-        reader.setSource(new File("/Users/adamsmj/Documents/Git/contributions/praeclarus/sareh220209/updates220214/reviewing.xes"));
-        try {
-            Table t = reader.read();
-            System.out.println(t.structure());
-            System.out.println(t.summary());
-            System.out.println();
-            System.out.println(t.first(50));
-
-        }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
 }

@@ -18,6 +18,7 @@ package com.processdataquality.praeclarus.writer;
 
 import com.processdataquality.praeclarus.annotation.Plugin;
 import com.processdataquality.praeclarus.exception.InvalidOptionException;
+import com.processdataquality.praeclarus.option.ColumnNameListOption;
 import com.processdataquality.praeclarus.util.DataCollection;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.deckfour.xes.classification.XEventLifeTransClassifier;
@@ -80,13 +81,29 @@ public class XesDataWriter extends AbstractDataWriter {
 
 
     public void addDefaultOptions() {
-        getOptions().addDefault("Case ID column", "case:id");
-        getOptions().addDefault("Name column", "concept:name");
-        getOptions().addDefault("Time column", "time:timestamp");
-        getOptions().addDefault("Lifecycle column", "lifecycle:transition");
-        getOptions().addDefault("Instance column", "concept:instance");
-        getOptions().addDefault("Resource column", "org:resource");
-        getOptions().addDefault("Data column", "data");
+        ColumnNameListOption caseIdCol = new ColumnNameListOption("Case ID column");
+        ColumnNameListOption nameCol = new ColumnNameListOption("Name column");
+        ColumnNameListOption timeCol = new ColumnNameListOption("Time column");
+        ColumnNameListOption lifecycleCol = new ColumnNameListOption("Lifecycle column");
+        ColumnNameListOption instanceCol = new ColumnNameListOption("Instance column");
+        ColumnNameListOption groupCol = new ColumnNameListOption("Group column");
+        ColumnNameListOption dataCol = new ColumnNameListOption("Data column");
+
+        caseIdCol.setSelected("case:id");
+        nameCol.setSelected("concept:name");
+        timeCol.setSelected("time:timestamp");
+        lifecycleCol.setSelected("lifecycle:transition");
+        instanceCol.setSelected("concept:instance");
+        groupCol.setSelected("org:group");
+        dataCol.setSelected("data");
+
+        getOptions().addDefault(caseIdCol);
+        getOptions().addDefault(nameCol);
+        getOptions().addDefault(timeCol);
+        getOptions().addDefault(lifecycleCol);
+        getOptions().addDefault(instanceCol);
+        getOptions().addDefault(groupCol);
+        getOptions().addDefault(dataCol);
     }
 
 
@@ -239,7 +256,7 @@ public class XesDataWriter extends AbstractDataWriter {
             mapColName(map, "time:timestamp", "Time column");
             mapColName(map, "lifecycle:transition", "Lifecycle column");
             mapColName(map, "concept:instance", "Instance column");
-            mapColName(map, "org:resource", "Resource column");
+            mapColName(map, "org:group", "Group column");
             mapColName(map, "data", "Data column");
         }
         catch (InvalidOptionException ipe) {
@@ -251,7 +268,7 @@ public class XesDataWriter extends AbstractDataWriter {
 
     private void mapColName(Map<String, String> map, String key, String optionKey)
             throws InvalidOptionException {
-        String userValue = getOptions().getNotNull(optionKey).asString();
+        String userValue = ((ColumnNameListOption) getOptions().get(optionKey)).getSelected();
         if (! userValue.isEmpty()) {
             map.put(key, userValue);
         }
@@ -298,5 +315,4 @@ public class XesDataWriter extends AbstractDataWriter {
         XesXmlSerializer serializer = new XesXmlSerializer();
         serializer.serialize(xLog, getDestinationAsOutputStream());
     }
-    
 }
