@@ -1,5 +1,6 @@
 package com.processdataquality.praeclarus.llm;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -12,47 +13,44 @@ import java.time.Duration;
 
 /**
  * Calls a local Ollama server over HTTP using the JDK's built-in HttpClient.
- * The model, system prompt and output schema are fixed for now; only the prompt
- * varies per call.
+ * The endpoint and model are fixed at construction; the prompts and output
+ * schema are supplied per call.
  *
  * @author Sean Dewantoro
  * @date 23/6/26
  */
 public class OllamaClient implements LlmClient {
 
-    private static final String OLLAMA_BASE = "http://172.19.41.216:11434"; // this is a private ip btw
-    private static final String MODEL = "llama3.2:3b";
-    private static final String SYSTEM_PROMPT =
-            "You will receive a food meal. Respond following the desired JSON output schema.";
+    // local CPU inference is slow, so keep the timeout generous
+    private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(5);
 
+    private final String baseUrl;
+    private final String model;
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
 
-    @Override
-    public String generate(String prompt) throws IOException, InterruptedException {
+    public OllamaClient(String baseUrl, String model) {
+        this.baseUrl = baseUrl;
+        this.model = model;
+    }
 
-        // Constrain the model to this JSON schema (Ollama structured outputs).
-        ObjectNode format = mapper.createObjectNode();
-        format.put("type", "object");
-        ObjectNode properties = format.putObject("properties");
-        properties.putObject("meal").put("type", "string");
-        ObjectNode recipe = properties.putObject("recipe");
-        recipe.put("type", "array");
-        recipe.putObject("items").put("type", "string");
-        properties.putObject("time_to_make_in_seconds").put("type", "number");
-        format.putArray("required").add("meal").add("recipe").add("time_to_make_in_seconds");
+    @Override
+    public String generate(String systemPrompt, String userPrompt, JsonNode format)
+            throws IOException, InterruptedException {
 
         ObjectNode body = mapper.createObjectNode();
-        body.put("model", MODEL);
+        body.put("model", model);
         body.put("stream", false);
-        body.put("system", SYSTEM_PROMPT);
-        body.set("format", format);
-        body.put("prompt", prompt);
+        body.put("system", systemPrompt);
+        if (format != null) {
+            body.set("format", format);
+        }
+        body.put("prompt", userPrompt);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(OLLAMA_BASE + "/api/generate"))
+                .uri(URI.create(baseUrl + "/api/generate"))
                 .header("Content-Type", "application/json")
-                .timeout(Duration.ofMinutes(2))
+                .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
                 .build();
 
@@ -66,7 +64,21 @@ public class OllamaClient implements LlmClient {
 
     // This is temporary and will eventually be deleted
     public static void main(String[] args) throws IOException, InterruptedException {
-        OllamaClient client = new OllamaClient();
-        System.out.println(client.generate("Make me fried rice please"));
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode format = mapper.createObjectNode();
+        format.put("type", "object");
+        ObjectNode properties = format.putObject("properties");
+        properties.putObject("meal").put("type", "string");
+        ObjectNode recipe = properties.putObject("recipe");
+        recipe.put("type", "array");
+        recipe.putObject("items").put("type", "string");
+        properties.putObject("time_to_make_in_seconds").put("type", "number");
+        format.putArray("required").add("meal").add("recipe").add("time_to_make_in_seconds");
+
+        OllamaClient client = new OllamaClient("http://172.19.41.216:11434", "llama3.2:3b");
+        System.out.println(client.generate(
+                "You will receive a food meal. Respond following the desired JSON output schema.",
+                "Make me fried rice please",
+                format));
     }
 }
