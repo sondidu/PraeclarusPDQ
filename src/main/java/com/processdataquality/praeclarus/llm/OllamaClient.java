@@ -41,6 +41,8 @@ public class OllamaClient implements LlmClient {
         ObjectNode body = mapper.createObjectNode();
         body.put("model", model);
         body.put("stream", false);
+        body.put("think", false);
+        body.putObject("options").put("seed", 42);
         body.put("system", systemPrompt);
         if (format != null) {
             body.set("format", format);
