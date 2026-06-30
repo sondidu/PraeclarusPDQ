@@ -61,24 +61,4 @@ public class OllamaClient implements LlmClient {
         // in the "response" field.
         return mapper.readTree(response.body()).get("response").asText();
     }
-
-    // This is temporary and will eventually be deleted
-    public static void main(String[] args) throws IOException, InterruptedException {
-        ObjectMapper mapper = new ObjectMapper();
-        ObjectNode format = mapper.createObjectNode();
-        format.put("type", "object");
-        ObjectNode properties = format.putObject("properties");
-        properties.putObject("meal").put("type", "string");
-        ObjectNode recipe = properties.putObject("recipe");
-        recipe.put("type", "array");
-        recipe.putObject("items").put("type", "string");
-        properties.putObject("time_to_make_in_seconds").put("type", "number");
-        format.putArray("required").add("meal").add("recipe").add("time_to_make_in_seconds");
-
-        OllamaClient client = new OllamaClient("http://172.19.41.216:11434", "llama3.2:3b");
-        System.out.println(client.generate(
-                "You will receive a food meal. Respond following the desired JSON output schema.",
-                "Make me fried rice please",
-                format));
-    }
 }
